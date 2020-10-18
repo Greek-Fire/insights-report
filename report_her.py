@@ -46,6 +46,7 @@ def cve_to_host(url):
   id_list = grab_id(url)
   cve_list = []
   for cve in id_list:
+    print cve
     cve_dict = {'cve': cve,'hostname':[]}
     x =  get_json(url + "vulnerability/v1/cves/" + cve + "/affected_systems?page_size=200000&data_format=json")['data']
     for y in x:
@@ -62,6 +63,7 @@ def gen_report(url):
       if i['hostname'] in a['hostname']:
         i['cve'].append(cve)
   print inv_list
+  return inv_list
 
 if __name__ == '__main__':
   usage = "Usuage: %prog ./in.py -u user -c"
