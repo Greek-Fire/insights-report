@@ -53,14 +53,17 @@ def grab_inv_list(url):
     inv_list.append(inv_dict)
   return inv_list
 
+def grab_dict(n):
+  hosts = n['attributes']['display_name']
+  return hosts
+
 def cve_rhsa_to_host(url):
   # Add RHSA or CVE key
   x = get_json(url)['data']
   cve_rhsa = re.search('(?=CVE|RHSA)([^abc]+-\d\d\d\d-\d+)(?=\/a)', url)
-  cve_rhsa_dict = {'id': cve_rhsa.group(1),'hostname':[]}
-  for y in x:
-    cve_rhsa_dict['hostname'].append(y['attributes']['display_name']) 
-  cve_rhsa_list.append(cve_rhsa_dict)
+  hosts = map(grab_dict, x)
+  cve_rhsa_dict = {'id': cve_rhsa.group(1),'hostname':hosts}
+  print cve_rhsa_dict
 
 def api_threader(url_list):
   threads = []
