@@ -1,4 +1,8 @@
 #!/usr/bin/python
+import csv
+import re
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import getpass
 import sys
@@ -11,8 +15,13 @@ except ImportError:
 
 def get_json(url):
     # Performs a GET using the passed URL location
+  try:
     r = requests.get(url, auth=(options.username, options.password),timeout=options.timeout, verify=options.verify)
-    return r.json()
+    r = r.json()
+  except ValueError:
+    print  r.text 
+    sys.exit(-1)
+  return r
 
 def call_api(url):
   jsn = get_json(url)
@@ -27,43 +36,57 @@ def call_api(url):
           print "No results found"
   return None
 
-def grab_id(url):
-  id_list = []
+
+def url_list(url):
+  url_list = []
   x = call_api(url + "vulnerability/v1/vulnerabilities/cves?data_format=json&show_all=false&page_size=200000")['data']
   for ids in x:
-    id_list.append(ids['id'])
-  return id_list
+    y = url + "vulnerability/v1/cves/" + ids['id'] + "/affected_systems?page_size=200000&data_format=json"
+    url_list.append(y)
+  return url_list
 
 def grab_inv_list(url):
   inv_list = []
   x = call_api(url + "vulnerability/v1/systems?page_size=300")['data']
   for inv in x:
-    inv_dict = {'hostname': inv['attributes']['display_name'],'cve':[]}
+    inv_dict = {'hostname': inv['attributes']['display_name'],'id':[]}
     inv_list.append(inv_dict)
   return inv_list
 
-def cve_to_host(url):
-  id_list = grab_id(url)
-  cve_list = []
-  for cve in id_list:
-    print cve
-    cve_dict = {'cve': cve,'hostname':[]}
-    x =  get_json(url + "vulnerability/v1/cves/" + cve + "/affected_systems?page_size=200000&data_format=json")['data']
-    for y in x:
-      cve_dict['hostname'].append(y['attributes']['display_name']) 
-    cve_list.append(cve_dict)
-  return cve_list
+def cve_rhsa_to_host(url):
+  # Add RHSA or CVE key
+  x = get_json(url)['data']
+  cve_rhsa = re.search('(?=CVE|RHSA)([^abc]+-\d\d\d\d-\d+)(?=\/a)', url)
+  cve_rhsa_dict = {'id': cve_rhsa.group(1),'hostname':[]}
+  for y in x:
+    cve_rhsa_dict['hostname'].append(y['attributes']['display_name']) 
+  cve_rhsa_list.append(cve_rhsa_dict)
 
+def api_threader(url_list):
+  threads = []
+  with ThreadPoolExecutor(max_workers=2) as executor:
+    for url in url_list:
+      threads.append(executor.submit(cve_rhsa_to_host, url))
+
+      
 def gen_report(url):
-  inv_list = grab_inv_list(url)
-  cvh = cve_to_host(url) 
+  u_list = url_list(url)
+  api_threader(u_list)
+  map_id_to_hosts(url)
+
+def map_id_to_hosts(url):
+  inv = grab_inv_list(url)
+  cvh = cve_rhsa_list 
   for a in cvh:
-    cve = a['cve']
-    for i in inv_list:
+    ids = a['id']
+    print ids
+    for i in inv:
+      print a['hostname']
       if i['hostname'] in a['hostname']:
-        i['cve'].append(cve)
-  print inv_list
-  return inv_list
+        i['id'].append(ids)
+  print inv
+  return inv
+
 
 if __name__ == '__main__':
   usage = "Usuage: %prog ./in.py -u user -c"
@@ -85,5 +108,9 @@ if __name__ == '__main__':
     print("You must add a user and to generate a cve report or a rhsa report") 
     sys.exit(1)
 
+  cve_rhsa_list = []
   #grab_id(options.url)
+  start = time.time()
+  print start
   gen_report(options.url)
+  print time.time()-start
