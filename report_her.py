@@ -19,7 +19,8 @@ def get_json(url):
     r = requests.get(url, auth=(options.username, options.password),timeout=options.timeout, verify=options.verify)
     r = r.json()
   except ValueError:
-    print  r.text 
+    print  "Json was not returned. Not Good!"
+    print r 
     sys.exit(-1)
   return r
 
@@ -63,7 +64,11 @@ def cve_rhsa_to_host(url):
   cve_rhsa = re.search('(?=CVE|RHSA)([^abc]+-\d\d\d\d-\d+)(?=\/a)', url)
   hosts = map(grab_dict, x)
   cve_rhsa_dict = {'id': cve_rhsa.group(1),'hostname':hosts}
-  print cve_rhsa_dict
+  cve_rhsa_list.append(cve_rhsa_dict)
+  if "Access Denied" in cve_rhsa.group(1):
+    print "Access Denied" 
+    sys.exit()
+  print cve_rhsa.group(1)
 
 def api_threader(url_list):
   threads = []
@@ -71,24 +76,27 @@ def api_threader(url_list):
     for url in url_list:
       threads.append(executor.submit(cve_rhsa_to_host, url))
 
-      
+#def map_id_to_hosts(url):
+#  inv = grab_inv_list(url)
+#  cvh = cve_rhsa_list 
+#  print cvh
+#  d = {x['id']:x for x in cvh}
+#  print d
+
+
 def gen_report(url):
   u_list = url_list(url)
   api_threader(u_list)
-  map_id_to_hosts(url)
-
-def map_id_to_hosts(url):
-  inv = grab_inv_list(url)
+  inv_list = grab_inv_list(url)
   cvh = cve_rhsa_list 
   for a in cvh:
-    ids = a['id']
-    print ids
-    for i in inv:
-      print a['hostname']
+    cve = a['id']
+    for i in inv_list:
       if i['hostname'] in a['hostname']:
-        i['id'].append(ids)
-  print inv
-  return inv
+        i['id'].append(cve)
+  print time.time()-start
+  print inv_list
+
 
 
 if __name__ == '__main__':
@@ -110,10 +118,7 @@ if __name__ == '__main__':
   if not (options.username and options.cve) or (options.username and options.rhsa): 
     print("You must add a user and to generate a cve report or a rhsa report") 
     sys.exit(1)
-
-  cve_rhsa_list = []
-  #grab_id(options.url)
   start = time.time()
-  print start
+  cve_rhsa_list = []
   gen_report(options.url)
   print time.time()-start
