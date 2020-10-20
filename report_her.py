@@ -20,8 +20,8 @@ def get_json(url):
     r = r.json()
   except ValueError:
     print  "Json was not returned. Not Good!"
-    print r 
-    sys.exit(-1)
+    print r.text 
+    sys.exit()
   return r
 
 def call_api(url):
@@ -72,7 +72,7 @@ def cve_rhsa_to_host(url):
 
 def api_threader(url_list):
   threads = []
-  with ThreadPoolExecutor(max_workers=2) as executor:
+  with ThreadPoolExecutor(max_workers=5) as executor:
     for url in url_list:
       threads.append(executor.submit(cve_rhsa_to_host, url))
 
@@ -113,7 +113,7 @@ if __name__ == '__main__':
   (options, args) = parser.parse_args()
 
   if not options.password:
-    options.password = getpass.getpass("%s's password:" % options.login)
+    options.password = getpass.getpass("%s's password:" % options.username)
 
   if not (options.username and options.cve) or (options.username and options.rhsa): 
     print("You must add a user and to generate a cve report or a rhsa report") 
