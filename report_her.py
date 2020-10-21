@@ -68,11 +68,11 @@ def cve_rhsa_to_host(url):
   if "Access Denied" in cve_rhsa.group(1):
     print "Access Denied" 
     sys.exit()
-  print cve_rhsa.group(1)
+#  print cve_rhsa.group(1)
 
 def api_threader(url_list):
   threads = []
-  with ThreadPoolExecutor(max_workers=5) as executor:
+  with ThreadPoolExecutor(max_workers=2) as executor:
     for url in url_list:
       threads.append(executor.submit(cve_rhsa_to_host, url))
 
@@ -94,8 +94,20 @@ def gen_report(url):
     for i in inv_list:
       if i['hostname'] in a['hostname']:
         i['id'].append(cve)
+
+  csv_file = open(options.csv_file, 'w')
+  csv_writer = csv.writer(csv_file)
+  count = 0
   print time.time()-start
-  print inv_list
+  for ids in inv_list:
+    if count == 0:
+        header = ids.keys()
+        csv_writer.writerow(header)
+        count += 1
+    val = [ids.values()[0]]
+    val.append(" ".join(ids.values()[1]))
+    csv_writer.writerow(val)
+  csv_file.close()
 
 
 
@@ -110,6 +122,7 @@ if __name__ == '__main__':
   parser.add_option("-i", dest="hosts", action='store_true', default=False, help="Use a list of hosts, if your inventory is less than the total number of CVEs or RHSA")
   parser.add_option("-r", dest="rhsa", action='store_true', default=False, help="Create RHSA Report")
   parser.add_option("--url", dest="url", action="store_true", default="https://cloud.redhat.com/api/", help="URL for API Call")
+  parser.add_option("-f", dest="csv_file", action="store_true", default="./report.csv", help="Name and location of CSV report file")
   (options, args) = parser.parse_args()
 
   if not options.password:
