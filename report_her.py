@@ -1,8 +1,8 @@
 #!/usr/bin/python
-import csv
-import re
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import re
+from multiprocessing.dummy import Pool
+import csv
 import json
 import getpass
 import sys
@@ -20,9 +20,10 @@ def get_json(url):
     r = r.json()
   except ValueError:
     print  "Json was not returned. Not Good!"
-    print r.text 
+    print r.text
     sys.exit()
   return r
+
 
 def call_api(url):
   jsn = get_json(url)
@@ -37,14 +38,30 @@ def call_api(url):
           print "No results found"
   return None
 
-
-def url_list(url):
+def url_list(url, api_ep):
   url_list = []
-  x = call_api(url + "vulnerability/v1/vulnerabilities/cves?data_format=json&show_all=false&page_size=200000")['data']
-  for ids in x:
-    y = url + "vulnerability/v1/cves/" + ids['id'] + "/affected_systems?page_size=200000&data_format=json"
+  x = call_api(url + api_ep)['data']
+  #x = call_api(url + "vulnerability/v1/vulnerabilities/cves?data_format=json&show_all=false&page_size=200000")['data']
+  y = map(grab_id, x)
+  for ids in y:
+    y = url + "vulnerability/v1/cves/" + ids + "/affected_systems?page_size=200000&data_format=json"
     url_list.append(y)
   return url_list
+
+def rhsa_url_list(url):
+  rhsa_url_list = []
+  x = call_api(url + "patch/v1/advisories?limit=-1&filter%5Badvisory_type%5D=3")['data']
+  #x = call_api(url + "vulnerability/v1/vulnerabilities/cves?data_format=json&show_all=false&page_size=200000")['data']
+  y = map(grab_id, x)
+  print y
+  for ids in y:
+    y = url + "patch/v1/advisories/" + ids + "/systems?limit=-1"
+    rhsa_url_list.append(y)
+  return rhsa_url_list
+
+def grab_id(n):
+  ids = n['id']
+  return ids
 
 def grab_inv_list(url):
   inv_list = []
@@ -52,7 +69,21 @@ def grab_inv_list(url):
   for inv in x:
     inv_dict = {'hostname': inv['attributes']['display_name'],'id':[]}
     inv_list.append(inv_dict)
+    print inv_dict
+  print inv_list
   return inv_list
+
+def rhsa_grab_inv_list(url):
+  inv_list = []
+  x = call_api(url + "patch/v1/systems?limit=-1&sort=rhsa_count")['data']
+  for inv in x:
+    if inv['attributes']['rhsa_count'] > 0:
+      inv_dict = {'hostname': inv['attributes']['display_name'],'id':[]}
+      inv_list.append(inv_dict)
+      print inv_dict
+  print inv_list
+  return inv_list
+
 
 def grab_dict(n):
   hosts = n['attributes']['display_name']
@@ -61,34 +92,23 @@ def grab_dict(n):
 def cve_rhsa_to_host(url):
   # Add RHSA or CVE key
   x = get_json(url)['data']
-  cve_rhsa = re.search('(?=CVE|RHSA)([^abc]+-\d\d\d\d-\d+)(?=\/a)', url)
+  cve_rhsa = re.search('(?=CVE|RHSA)([^abc]+-\d\d\d\d.\d+)(?=\/)', url)
   hosts = map(grab_dict, x)
   cve_rhsa_dict = {'id': cve_rhsa.group(1),'hostname':hosts}
   cve_rhsa_list.append(cve_rhsa_dict)
   if "Access Denied" in cve_rhsa.group(1):
-    print "Access Denied" 
+    print "Access Denied"
     sys.exit()
-#  print cve_rhsa.group(1)
-
-def api_threader(url_list):
-  threads = []
-  with ThreadPoolExecutor(max_workers=2) as executor:
-    for url in url_list:
-      threads.append(executor.submit(cve_rhsa_to_host, url))
-
-#def map_id_to_hosts(url):
-#  inv = grab_inv_list(url)
-#  cvh = cve_rhsa_list 
-#  print cvh
-#  d = {x['id']:x for x in cvh}
-#  print d
-
+  print cve_rhsa.group(1)
 
 def gen_report(url):
   u_list = url_list(url)
-  api_threader(u_list)
+  pool = Pool(2)
+  cve = pool.map(cve_rhsa_to_host, u_list)
+  pool.close()
+  pool.join()
   inv_list = grab_inv_list(url)
-  cvh = cve_rhsa_list 
+  cvh = cve_rhsa_list
   for a in cvh:
     cve = a['id']
     for i in inv_list:
@@ -100,16 +120,47 @@ def gen_report(url):
   count = 0
   print time.time()-start
   for ids in inv_list:
+    ids['total'] = len(ids.values()[1])
     if count == 0:
         header = ids.keys()
         csv_writer.writerow(header)
         count += 1
     val = [ids.values()[0]]
-    val.append(" ".join(ids.values()[1]))
+    val.append(ids.values()[1])
+    val.append(" ".join(ids.values()[2]))
     csv_writer.writerow(val)
   csv_file.close()
 
+def rhsa_gen_report(url):
+  rhsa_u_list = rhsa_url_list(url)
+  print rhsa_u_list
+  pool = Pool(2)
+  cve = pool.map(cve_rhsa_to_host, rhsa_u_list)
+  pool.close()
+  pool.join()
+  inv_list = rhsa_grab_inv_list(url)
+  cvh = cve_rhsa_list
+  for a in cvh:
+    cve = a['id']
+    for i in inv_list:
+      if i['hostname'] in a['hostname']:
+        i['id'].append(cve)
 
+  csv_file = open(options.csv_file, 'w')
+  csv_writer = csv.writer(csv_file)
+  count = 0
+  print time.time()-start
+  for ids in inv_list:
+    ids['total'] = len(ids.values()[1])
+    if count == 0:
+        header = ids.keys()
+        csv_writer.writerow(header)
+        count += 1
+    val = [ids.values()[0]]
+    val.append(ids.values()[1])
+    val.append(" ".join(ids.values()[2]))
+    csv_writer.writerow(val)
+  csv_file.close()
 
 if __name__ == '__main__':
   usage = "Usuage: %prog ./in.py -u user -c"
@@ -126,12 +177,14 @@ if __name__ == '__main__':
   (options, args) = parser.parse_args()
 
   if not options.password:
-    options.password = getpass.getpass("%s's password:" % options.username)
+    options.password = getpass.getpass("%s's password:" % options.login)
 
   if not (options.username and options.cve) or (options.username and options.rhsa): 
     print("You must add a user and to generate a cve report or a rhsa report") 
     sys.exit(1)
+
+  #grab_id(options.url)
   start = time.time()
+  print time.time() - start
   cve_rhsa_list = []
-  gen_report(options.url)
-  print time.time()-start
+  rhsa_gen_report(options.url)
