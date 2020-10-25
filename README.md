@@ -1,4 +1,4 @@
-# report_her
+# insights-cli
 
 Example: 
-./report_her.py -u username -c
+./insights-clit -u username -c
